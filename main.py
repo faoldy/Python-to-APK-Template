@@ -6,7 +6,6 @@ from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.gridlayout import GridLayout
-from kivy.core.window import Window
 from kivy.metrics import dp
 from kivy.core.text import LabelBase
 from kivy.uix.checkbox import CheckBox
@@ -17,6 +16,7 @@ from kivy.clock import Clock
 from kivy.graphics import Color, RoundedRectangle, Rectangle
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.behaviors import ButtonBehavior
+from kivy.utils import platform  # 增加平台判断库
 import os
 import sys
 from datetime import datetime
@@ -24,9 +24,13 @@ import json
 import requests
 import threading
 
-# 设置窗口大小
-Window.size = (360, 640)
-Window.clearcolor = (0.95, 0.97, 0.99, 1)
+# ***************** 重要修改：禁止在安卓端强行设置 Window.size *****************
+# 仅在桌面（PC）调试模式下设置固定窗口大小，安卓、iOS 完全交由系统自适应
+if platform not in ('android', 'ios'):
+    from kivy.core.window import Window
+
+    Window.size = (360, 640)
+    Window.clearcolor = (0.95, 0.97, 0.99, 1)
 
 
 def get_base_dir():
@@ -94,6 +98,7 @@ def register_chinese_font():
 
 # 注册字体
 DEFAULT_FONT = register_chinese_font()
+
 
 # ==================== 自定义美化组件 ====================
 class GradientButton(Button):
@@ -587,28 +592,44 @@ class LoginScreen(Screen):
         self.user_manager.load_users()
 
         main_layout = FloatLayout()
+        self.main_layout = main_layout
+
+        # ******************************** 重要修改 ********************************
+        # 将 Canvas 背景绘制的方法抽离，并绑定 main_layout 的 pos 和 size 进行动态刷新
+        # 避免在 Android 上使用未初始化完成的 Window.width 或 Window.height
         with main_layout.canvas.before:
             Color(0.95, 0.97, 0.99, 1)
-            Rectangle(pos=main_layout.pos, size=main_layout.size)
+            self.bg_rect = Rectangle(pos=main_layout.pos, size=main_layout.size)
             Color(0.2, 0.55, 0.85, 0.08)
-            RoundedRectangle(
-                pos=(0, Window.height * 0.6),
-                size=(Window.width, Window.height * 0.5),
-                radius=[(0, 0), (0, 0), (Window.width / 2, Window.width / 2), (Window.width / 2, Window.width / 2)]
+            self.bg_rounded = RoundedRectangle(
+                pos=(0, 0),
+                size=(0, 0),
+                radius=[(0, 0), (0, 0), (0, 0), (0, 0)]
             )
 
+        # 绑定布局尺寸刷新背景
+        main_layout.bind(pos=self._update_bg, size=self._update_bg)
+        # ************************************************************************
+
         card = CardBox(size_hint=(0.85, 0.7), pos_hint={'center_x': 0.5, 'center_y': 0.5})
-        title_label = Label(text='安全风险管控', font_size='26sp', font_name=DEFAULT_FONT, color=(0.15, 0.3, 0.5, 1), size_hint_y=0.15, bold=True)
+        title_label = Label(text='安全风险管控', font_size='26sp', font_name=DEFAULT_FONT, color=(0.15, 0.3, 0.5, 1),
+                            size_hint_y=0.15, bold=True)
         card.add_widget(title_label)
-        subtitle = Label(text='请输入账号密码登录', font_size='13sp', font_name=DEFAULT_FONT, color=(0.5, 0.5, 0.5, 1), size_hint_y=0.05)
+        subtitle = Label(text='请输入账号密码登录', font_size='13sp', font_name=DEFAULT_FONT, color=(0.5, 0.5, 0.5, 1),
+                         size_hint_y=0.05)
         card.add_widget(subtitle)
 
-        card.add_widget(Label(text='账号', font_size='14sp', font_name=DEFAULT_FONT, color=(0.3, 0.3, 0.3, 1), size_hint_y=0.06, halign='left'))
+        card.add_widget(
+            Label(text='账号', font_size='14sp', font_name=DEFAULT_FONT, color=(0.3, 0.3, 0.3, 1), size_hint_y=0.06,
+                  halign='left'))
         self.username_input = ModernTextInput(text='', size_hint_y=0.08, multiline=False, hint_text='请输入账号')
         card.add_widget(self.username_input)
 
-        card.add_widget(Label(text='密码', font_size='14sp', font_name=DEFAULT_FONT, color=(0.3, 0.3, 0.3, 1), size_hint_y=0.06, halign='left'))
-        self.password_input = ModernTextInput(text='', size_hint_y=0.08, multiline=False, password=True, hint_text='请输入密码')
+        card.add_widget(
+            Label(text='密码', font_size='14sp', font_name=DEFAULT_FONT, color=(0.3, 0.3, 0.3, 1), size_hint_y=0.06,
+                  halign='left'))
+        self.password_input = ModernTextInput(text='', size_hint_y=0.08, multiline=False, password=True,
+                                              hint_text='请输入密码')
         card.add_widget(self.password_input)
 
         remember_layout = BoxLayout(orientation='horizontal', size_hint_y=0.06, spacing=dp(5))
@@ -620,11 +641,27 @@ class LoginScreen(Screen):
         login_btn.bind(on_press=self.do_login)
         card.add_widget(login_btn)
 
-        version_label = Label(text='v1.0.0', font_size='11sp', font_name=DEFAULT_FONT, color=(0.7, 0.7, 0.7, 1), size_hint_y=0.04)
+        version_label = Label(text='v1.0.0', font_size='11sp', font_name=DEFAULT_FONT, color=(0.7, 0.7, 0.7, 1),
+                              size_hint_y=0.04)
         card.add_widget(version_label)
         main_layout.add_widget(card)
         self.add_widget(main_layout)
         self.load_saved_login()
+
+    def _update_bg(self, instance, value):
+        """动态刷新登录页面的背景圆角图形，防止硬编码坐标导致偏移"""
+        self.main_layout.canvas.before.clear()
+        with self.main_layout.canvas.before:
+            Color(0.95, 0.97, 0.99, 1)
+            Rectangle(pos=self.main_layout.pos, size=self.main_layout.size)
+            Color(0.2, 0.55, 0.85, 0.08)
+            w = self.main_layout.width
+            h = self.main_layout.height
+            RoundedRectangle(
+                pos=(0, h * 0.6),
+                size=(w, h * 0.5),
+                radius=[(0, 0), (0, 0), (w / 2, w / 2), (w / 2, w / 2)]
+            )
 
     def load_saved_login(self):
         try:
@@ -688,7 +725,8 @@ class LoginScreen(Screen):
     def show_loading_popup(self, message):
         content = BoxLayout(orientation='vertical', spacing=dp(10), padding=dp(20))
         content.add_widget(Label(text=message, font_name=DEFAULT_FONT, color=(0.3, 0.3, 0.3, 1)))
-        self.loading_popup = Popup(title='请稍候', content=content, size_hint=(0.8, 0.3), auto_dismiss=False, background_color=(1, 1, 1, 0.95))
+        self.loading_popup = Popup(title='请稍候', content=content, size_hint=(0.8, 0.3), auto_dismiss=False,
+                                   background_color=(1, 1, 1, 0.95))
         self.loading_popup.open()
 
     def close_loading_popup(self):
@@ -698,10 +736,12 @@ class LoginScreen(Screen):
 
     def show_message(self, message):
         content = BoxLayout(orientation='vertical', spacing=dp(15), padding=dp(20))
-        content.add_widget(Label(text=message, font_name=DEFAULT_FONT, text_size=(dp(250), None), halign='center', color=(0.3, 0.3, 0.3, 1)))
+        content.add_widget(Label(text=message, font_name=DEFAULT_FONT, text_size=(dp(250), None), halign='center',
+                                 color=(0.3, 0.3, 0.3, 1)))
         btn = PrimaryButton(text='确 定', size_hint_y=0.3)
         content.add_widget(btn)
-        popup = Popup(title='提示', content=content, size_hint=(0.8, 0.35), auto_dismiss=True, background_color=(1, 1, 1, 0.95))
+        popup = Popup(title='提示', content=content, size_hint=(0.8, 0.35), auto_dismiss=True,
+                      background_color=(1, 1, 1, 0.95))
         btn.bind(on_press=popup.dismiss)
         popup.open()
 
@@ -715,7 +755,8 @@ class AutoClosePopup(Popup):
         self.auto_dismiss = True
         self.background_color = (1, 1, 1, 0.95)
         content = BoxLayout(orientation='vertical', spacing=dp(10), padding=dp(20))
-        content.add_widget(Label(text=message, font_name=DEFAULT_FONT, text_size=(dp(250), None), halign='center', color=(0.3, 0.3, 0.3, 1)))
+        content.add_widget(Label(text=message, font_name=DEFAULT_FONT, text_size=(dp(250), None), halign='center',
+                                 color=(0.3, 0.3, 0.3, 1)))
         self.content = content
         Clock.schedule_once(self.auto_dismiss_popup, auto_close_time)
 
@@ -740,10 +781,13 @@ class ModernHazardItem(BoxLayout):
         self.checkbox.color = (0.2, 0.55, 0.85, 1)
         self.add_widget(self.checkbox)
 
-        self.label = Label(text=hazard_data['hazardFirst'], font_size='12sp', halign='left', valign='middle', font_name=DEFAULT_FONT, size_hint_x=0.7, text_size=(dp(180), None), color=(0.25, 0.25, 0.25, 1), shorten=True, shorten_from='right')
+        self.label = Label(text=hazard_data['hazardFirst'], font_size='12sp', halign='left', valign='middle',
+                           font_name=DEFAULT_FONT, size_hint_x=0.7, text_size=(dp(180), None),
+                           color=(0.25, 0.25, 0.25, 1), shorten=True, shorten_from='right')
         self.add_widget(self.label)
 
-        status_label = RoundLabel(text='待检', font_size='10sp', bg_color=(0.95, 0.6, 0.1, 0.15), color=(0.95, 0.6, 0.1, 1), size_hint_x=0.15)
+        status_label = RoundLabel(text='待检', font_size='10sp', bg_color=(0.95, 0.6, 0.1, 0.15),
+                                  color=(0.95, 0.6, 0.1, 1), size_hint_x=0.15)
         self.add_widget(status_label)
 
     def _init_canvas(self, dt):
@@ -764,10 +808,12 @@ class ModernHazardItem(BoxLayout):
             RoundedRectangle(pos=(self.x + 1, self.y + 1), size=(self.width - 2, self.height - 2), radius=[dp(5)])
 
     @property
-    def is_checked(self): return self.checkbox.active
+    def is_checked(self):
+        return self.checkbox.active
 
     @is_checked.setter
-    def is_checked(self, value): self.checkbox.active = value
+    def is_checked(self, value):
+        self.checkbox.active = value
 
 
 class ModernLoadMoreButton(Button):
@@ -813,14 +859,17 @@ class HazardDetailScreen(Screen):
         back_btn.bind(on_press=self.go_back)
         nav_layout.add_widget(back_btn)
         nav_layout.add_widget(Widget())
-        self.user_info_label = Label(text='', font_size='11sp', color=(0.2, 0.5, 0.8, 1), font_name=DEFAULT_FONT, size_hint_x=0.5, halign='right')
+        self.user_info_label = Label(text='', font_size='11sp', color=(0.2, 0.5, 0.8, 1), font_name=DEFAULT_FONT,
+                                     size_hint_x=0.5, halign='right')
         nav_layout.add_widget(self.user_info_label)
         self.main_layout.add_widget(nav_layout)
 
         header_layout = BoxLayout(orientation='vertical', size_hint_y=0.07, padding=[dp(15), dp(3)])
-        self.title_label = Label(text='', font_size='17sp', font_name=DEFAULT_FONT, color=(0.15, 0.3, 0.5, 1), bold=True, halign='center')
+        self.title_label = Label(text='', font_size='17sp', font_name=DEFAULT_FONT, color=(0.15, 0.3, 0.5, 1),
+                                 bold=True, halign='center')
         header_layout.add_widget(self.title_label)
-        self.info_label = Label(text='', font_size='12sp', color=(0.5, 0.5, 0.5, 1), font_name=DEFAULT_FONT, halign='center')
+        self.info_label = Label(text='', font_size='12sp', color=(0.5, 0.5, 0.5, 1), font_name=DEFAULT_FONT,
+                                halign='center')
         header_layout.add_widget(self.info_label)
         self.main_layout.add_widget(header_layout)
 
@@ -835,7 +884,8 @@ class HazardDetailScreen(Screen):
         self.select_all_btn.bind(on_press=self.select_all)
         bottom_layout.add_widget(self.select_all_btn)
         bottom_layout.add_widget(Widget())
-        self.count_label = Label(text='已选 0 项', font_size='12sp', font_name=DEFAULT_FONT, color=(0.5, 0.5, 0.5, 1), size_hint_x=0.3)
+        self.count_label = Label(text='已选 0 项', font_size='12sp', font_name=DEFAULT_FONT, color=(0.5, 0.5, 0.5, 1),
+                                 size_hint_x=0.3)
         bottom_layout.add_widget(self.count_label)
         self.check_btn = SuccessButton(text='提交', font_size='14sp', size_hint_x=0.3)
         self.check_btn.bind(on_press=self.perform_check)
@@ -883,7 +933,8 @@ class HazardDetailScreen(Screen):
         self.all_data_loaded = False
         self.is_loading_all_data = False
         self.hazard_grid.clear_widgets()
-        loading_label = Label(text='加载中...', font_name=DEFAULT_FONT, size_hint_y=None, height=dp(50), color=(0.5, 0.5, 0.5, 1))
+        loading_label = Label(text='加载中...', font_name=DEFAULT_FONT, size_hint_y=None, height=dp(50),
+                              color=(0.5, 0.5, 0.5, 1))
         self.hazard_grid.add_widget(loading_label)
         self.is_loading = True
         self.data_manager.load_data(self._on_data_loaded)
@@ -900,14 +951,16 @@ class HazardDetailScreen(Screen):
 
     def _show_error(self):
         self.hazard_grid.clear_widgets()
-        error_label = Label(text=self.data_manager.get_error(), font_name=DEFAULT_FONT, color=(0.8, 0.2, 0.2, 1), size_hint_y=None, height=dp(50))
+        error_label = Label(text=self.data_manager.get_error(), font_name=DEFAULT_FONT, color=(0.8, 0.2, 0.2, 1),
+                            size_hint_y=None, height=dp(50))
         self.hazard_grid.add_widget(error_label)
         self.is_loading = False
 
     def _render_page(self):
         self.hazard_grid.clear_widgets()
         if self.total_count == 0:
-            no_data = Label(text='该风险点暂无数据', font_name=DEFAULT_FONT, color=(0.5, 0.5, 0.5, 1), size_hint_y=None, height=dp(50))
+            no_data = Label(text='该风险点暂无数据', font_name=DEFAULT_FONT, color=(0.5, 0.5, 0.5, 1), size_hint_y=None,
+                            height=dp(50))
             self.hazard_grid.add_widget(no_data)
             self.title_label.text = self.current_risk_point
             self.info_label.text = '暂无数据'
@@ -935,7 +988,8 @@ class HazardDetailScreen(Screen):
 
     def load_more(self, instance):
         self.current_page += 1
-        data_list, _ = self.data_manager.get_data_by_point(self.current_risk_point, limit=self.page_size, offset=self.current_page * self.page_size)
+        data_list, _ = self.data_manager.get_data_by_point(self.current_risk_point, limit=self.page_size,
+                                                           offset=self.current_page * self.page_size)
         if len(self.hazard_grid.children) > 0:
             last_child = self.hazard_grid.children[0]
             if isinstance(last_child, ModernLoadMoreButton):
@@ -978,9 +1032,11 @@ class HazardDetailScreen(Screen):
     def _load_all_data_for_select_all(self):
         if self.is_loading: return
         self.is_loading = True
+
         def load_all():
             all_data = self.data_manager.get_all_data_by_point(self.current_risk_point)
             Clock.schedule_once(lambda dt: self._render_all_data(all_data), 0)
+
         threading.Thread(target=load_all, daemon=True).start()
 
     def _render_all_data(self, all_data):
@@ -1016,7 +1072,9 @@ class HazardDetailScreen(Screen):
 
     def show_check_confirm(self, selected):
         content = BoxLayout(orientation='vertical', spacing=dp(10), padding=dp(20))
-        info_label = Label(text=f'即将提交 {len(selected)} 个危险源\n\n检查人员：{self.login_name}', font_name=DEFAULT_FONT, text_size=(dp(250), None), halign='center', color=(0.3, 0.3, 0.3, 1), size_hint_y=0.6)
+        info_label = Label(text=f'即将提交 {len(selected)} 个危险源\n\n检查人员：{self.login_name}',
+                           font_name=DEFAULT_FONT, text_size=(dp(250), None), halign='center', color=(0.3, 0.3, 0.3, 1),
+                           size_hint_y=0.6)
         content.add_widget(info_label)
         btn_layout = BoxLayout(orientation='horizontal', spacing=dp(10), size_hint_y=0.4)
         cancel_btn = DangerButton(text='取消', font_size='14sp')
@@ -1024,7 +1082,8 @@ class HazardDetailScreen(Screen):
         btn_layout.add_widget(cancel_btn)
         btn_layout.add_widget(confirm_btn)
         content.add_widget(btn_layout)
-        popup = Popup(title='确认提交', content=content, size_hint=(0.85, 0.4), auto_dismiss=True, background_color=(1, 1, 1, 0.95))
+        popup = Popup(title='确认提交', content=content, size_hint=(0.85, 0.4), auto_dismiss=True,
+                      background_color=(1, 1, 1, 0.95))
         cancel_btn.bind(on_press=popup.dismiss)
         confirm_btn.bind(on_press=lambda x: self._do_perform_check(selected, popup))
         popup.open()
@@ -1082,10 +1141,12 @@ class HazardDetailScreen(Screen):
 
     def show_message(self, message):
         content = BoxLayout(orientation='vertical', spacing=dp(15), padding=dp(20))
-        content.add_widget(Label(text=message, font_name=DEFAULT_FONT, text_size=(dp(250), None), halign='center', color=(0.3, 0.3, 0.3, 1)))
+        content.add_widget(Label(text=message, font_name=DEFAULT_FONT, text_size=(dp(250), None), halign='center',
+                                 color=(0.3, 0.3, 0.3, 1)))
         btn = PrimaryButton(text='确 定', size_hint_y=0.3)
         content.add_widget(btn)
-        popup = Popup(title='提示', content=content, size_hint=(0.8, 0.35), auto_dismiss=True, background_color=(1, 1, 1, 0.95))
+        popup = Popup(title='提示', content=content, size_hint=(0.8, 0.35), auto_dismiss=True,
+                      background_color=(1, 1, 1, 0.95))
         btn.bind(on_press=popup.dismiss)
         popup.open()
 
@@ -1098,16 +1159,27 @@ class MainScreen(Screen):
         super().__init__(**kwargs)
         self.client = None
         main_layout = FloatLayout()
+        self.main_layout = main_layout
+
+        # ******************************** 重要修改 ********************************
+        # 背景绑定 layout 坐标，不依赖全局 Window
         with main_layout.canvas.before:
             Color(0.95, 0.97, 0.99, 1)
-            Rectangle(pos=main_layout.pos, size=main_layout.size)
+            self.bg_rect = Rectangle(pos=main_layout.pos, size=main_layout.size)
+        main_layout.bind(pos=self._update_bg, size=self._update_bg)
+        # ************************************************************************
+
         header = BoxLayout(orientation='vertical', size_hint=(1, 0.2), pos_hint={'top': 1}, padding=[dp(20), dp(20)])
-        header.add_widget(Label(text='安全风险管控', font_size='28sp', font_name=DEFAULT_FONT, color=(0.15, 0.3, 0.5, 1), bold=True, size_hint_y=0.6, halign='center'))
-        self.user_label = Label(text='', font_size='14sp', font_name=DEFAULT_FONT, color=(0.3, 0.6, 0.9, 1), size_hint_y=0.4, halign='center')
+        header.add_widget(
+            Label(text='安全风险管控', font_size='28sp', font_name=DEFAULT_FONT, color=(0.15, 0.3, 0.5, 1), bold=True,
+                  size_hint_y=0.6, halign='center'))
+        self.user_label = Label(text='', font_size='14sp', font_name=DEFAULT_FONT, color=(0.3, 0.6, 0.9, 1),
+                                size_hint_y=0.4, halign='center')
         header.add_widget(self.user_label)
         main_layout.add_widget(header)
 
-        card_layout = BoxLayout(orientation='vertical', spacing=dp(15), padding=dp(20), size_hint=(0.9, 0.5), pos_hint={'center_x': 0.5, 'center_y': 0.5})
+        card_layout = BoxLayout(orientation='vertical', spacing=dp(15), padding=dp(20), size_hint=(0.9, 0.5),
+                                pos_hint={'center_x': 0.5, 'center_y': 0.5})
         hazard_btn = GradientButton(text='危险源录入', font_size='18sp', size_hint_y=0.3)
         hazard_btn.main_color = (0.2, 0.55, 0.85, 1)
         hazard_btn.bind(on_press=self.go_to_hazard_list)
@@ -1122,10 +1194,17 @@ class MainScreen(Screen):
         card_layout.add_widget(logout_btn)
         main_layout.add_widget(card_layout)
 
-        version_label = Label(text='v1.0.0  |  安全检查系统', font_size='11sp', font_name=DEFAULT_FONT, color=(0.7, 0.7, 0.7, 1), size_hint=(1, 0.05), pos_hint={'y': 0.02})
+        version_label = Label(text='v1.0.0  |  安全检查系统', font_size='11sp', font_name=DEFAULT_FONT,
+                              color=(0.7, 0.7, 0.7, 1), size_hint=(1, 0.05), pos_hint={'y': 0.02})
         main_layout.add_widget(version_label)
         self.add_widget(main_layout)
         Clock.schedule_once(lambda dt: self.preload_data(), 0.5)
+
+    def _update_bg(self, instance, value):
+        self.main_layout.canvas.before.clear()
+        with self.main_layout.canvas.before:
+            Color(0.95, 0.97, 0.99, 1)
+            Rectangle(pos=self.main_layout.pos, size=self.main_layout.size)
 
     def set_client(self, client):
         self.client = client
@@ -1163,10 +1242,12 @@ class HazardListScreen(Screen):
         back_btn = DangerButton(text='返回', size_hint_x=0.2, font_size='13sp')
         back_btn.bind(on_press=self.go_back)
         nav_layout.add_widget(back_btn)
-        nav_layout.add_widget(Label(text='风险点列表', font_name=DEFAULT_FONT, font_size='18sp', color=(0.15, 0.3, 0.5, 1), bold=True))
+        nav_layout.add_widget(
+            Label(text='风险点列表', font_name=DEFAULT_FONT, font_size='18sp', color=(0.15, 0.3, 0.5, 1), bold=True))
         nav_layout.add_widget(Widget())
         self.layout.add_widget(nav_layout)
-        self.loading_label = Label(text='加载风险点列表...', font_size='14sp', font_name=DEFAULT_FONT, color=(0.5, 0.5, 0.5, 1), size_hint_y=0.05)
+        self.loading_label = Label(text='加载风险点列表...', font_size='14sp', font_name=DEFAULT_FONT,
+                                   color=(0.5, 0.5, 0.5, 1), size_hint_y=0.05)
         self.layout.add_widget(self.loading_label)
         scroll = ScrollView()
         self.grid = GridLayout(cols=2, spacing=dp(10), padding=dp(12), size_hint_y=None)
@@ -1178,8 +1259,10 @@ class HazardListScreen(Screen):
 
     def load_risk_points(self):
         data_manager = DataManager()
+
         def on_data_loaded(data, index):
             Clock.schedule_once(lambda dt: self._render_buttons(), 0)
+
         if data_manager._loaded:
             Clock.schedule_once(lambda dt: self._render_buttons(), 0)
         else:
@@ -1190,13 +1273,15 @@ class HazardListScreen(Screen):
         self.layout.remove_widget(self.loading_label)
         data_manager = DataManager()
         if data_manager.has_error():
-            error_label = Label(text='数据文件不存在\n请创建 hazard_data.json', font_name=DEFAULT_FONT, color=(0.8, 0.2, 0.2, 1), size_hint_y=None, height=dp(60))
+            error_label = Label(text='数据文件不存在\n请创建 hazard_data.json', font_name=DEFAULT_FONT,
+                                color=(0.8, 0.2, 0.2, 1), size_hint_y=None, height=dp(60))
             self.grid.add_widget(error_label)
             self.grid.height = dp(70)
             return
         risk_points = data_manager.get_point_list()
         if not risk_points:
-            no_data = Label(text='暂无数据', font_name=DEFAULT_FONT, color=(0.5, 0.5, 0.5, 1), size_hint_y=None, height=dp(50))
+            no_data = Label(text='暂无数据', font_name=DEFAULT_FONT, color=(0.5, 0.5, 0.5, 1), size_hint_y=None,
+                            height=dp(50))
             self.grid.add_widget(no_data)
             self.grid.height = dp(60)
             return
@@ -1222,27 +1307,44 @@ class PersonalInfoScreen(Screen):
         self.login_name = ''
         self.login_code = ''
         main_layout = FloatLayout()
+        self.main_layout = main_layout
+
+        # ******************************** 重要修改 ********************************
         with main_layout.canvas.before:
             Color(0.95, 0.97, 0.99, 1)
-            Rectangle(pos=main_layout.pos, size=main_layout.size)
+            self.bg_rect = Rectangle(pos=main_layout.pos, size=main_layout.size)
+        main_layout.bind(pos=self._update_bg, size=self._update_bg)
+        # ************************************************************************
+
         back_btn = DangerButton(text='返回', size_hint=(0.2, 0.05), pos_hint={'x': 0.02, 'top': 0.97}, font_size='13sp')
         back_btn.bind(on_press=self.go_back)
         main_layout.add_widget(back_btn)
         card = CardBox(size_hint=(0.85, 0.5), pos_hint={'center_x': 0.5, 'center_y': 0.5})
-        avatar = Label(text='用户', font_size='40sp', size_hint_y=0.3, halign='center', color=(0.2, 0.55, 0.85, 1), bold=True)
+        avatar = Label(text='用户', font_size='40sp', size_hint_y=0.3, halign='center', color=(0.2, 0.55, 0.85, 1),
+                       bold=True)
         card.add_widget(avatar)
-        self.name_label = Label(text='姓名：', font_size='18sp', font_name=DEFAULT_FONT, color=(0.15, 0.3, 0.5, 1), size_hint_y=0.15, bold=True, halign='center')
+        self.name_label = Label(text='姓名：', font_size='18sp', font_name=DEFAULT_FONT, color=(0.15, 0.3, 0.5, 1),
+                                size_hint_y=0.15, bold=True, halign='center')
         card.add_widget(self.name_label)
-        self.code_label = Label(text='编码：', font_size='16sp', font_name=DEFAULT_FONT, color=(0.5, 0.5, 0.5, 1), size_hint_y=0.15, halign='center')
+        self.code_label = Label(text='编码：', font_size='16sp', font_name=DEFAULT_FONT, color=(0.5, 0.5, 0.5, 1),
+                                size_hint_y=0.15, halign='center')
         card.add_widget(self.code_label)
         divider = Label(text='-' * 20, font_size='12sp', color=(0.85, 0.85, 0.85, 1), size_hint_y=0.05)
         card.add_widget(divider)
-        status_label = RoundLabel(text='已登录', font_size='14sp', bg_color=(0.2, 0.7, 0.35, 0.15), color=(0.2, 0.7, 0.35, 1), size_hint_y=0.1, halign='center')
+        status_label = RoundLabel(text='已登录', font_size='14sp', bg_color=(0.2, 0.7, 0.35, 0.15),
+                                  color=(0.2, 0.7, 0.35, 1), size_hint_y=0.1, halign='center')
         card.add_widget(status_label)
         main_layout.add_widget(card)
-        version_label = Label(text='安全风险管控系统 v1.0.0', font_size='11sp', font_name=DEFAULT_FONT, color=(0.7, 0.7, 0.7, 1), size_hint=(1, 0.04), pos_hint={'y': 0.02})
+        version_label = Label(text='安全风险管控系统 v1.0.0', font_size='11sp', font_name=DEFAULT_FONT,
+                              color=(0.7, 0.7, 0.7, 1), size_hint=(1, 0.04), pos_hint={'y': 0.02})
         main_layout.add_widget(version_label)
         self.add_widget(main_layout)
+
+    def _update_bg(self, instance, value):
+        self.main_layout.canvas.before.clear()
+        with self.main_layout.canvas.before:
+            Color(0.95, 0.97, 0.99, 1)
+            Rectangle(pos=self.main_layout.pos, size=self.main_layout.size)
 
     def set_user_info(self, name, code):
         self.login_name = name
