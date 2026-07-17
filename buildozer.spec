@@ -17,7 +17,7 @@ requirements = python3,kivy,kivymd,libiconv,libffi,requests,openssl
 #icon.filename = icon.png
 #presplash.filename = presplash.png
 #fullscreen = 0
-#orientation = portrait
+orientation = portrait
 #主程序 Main,what can I say.Mamba out
 entrypoint = main.py
 
