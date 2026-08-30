@@ -13,7 +13,7 @@ source.include_exts = py,png,jpg,kv,atlas,ttf,json
 #source.include_patterns = image/*
 version = 0.0.1
 #依赖库,后二为打包需要 The last two are needed for packaging
-requirements = python3,kivy,kivymd,libiconv,libffi,requests,openssl,pycairo
+requirements = python3,kivy,kivymd==1.2.0,libiconv,libffi,requests,openssl
 #icon.filename = icon.png
 #presplash.filename = presplash.png
 fullscreen = 1
