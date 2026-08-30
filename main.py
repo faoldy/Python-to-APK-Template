@@ -1,4 +1,4 @@
-# main.py - 同步加载修复版
+# main.py - 修复版
 from kivy.app import App
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.boxlayout import BoxLayout
@@ -89,7 +89,6 @@ def register_chinese_font():
 
 # 注册字体
 DEFAULT_FONT = register_chinese_font()
-
 
 # ==================== 自定义美化组件 ====================
 class GradientButton(Button):
@@ -290,7 +289,6 @@ class CardBox(BoxLayout):
 
 class ModernTextInput(TextInput):
     """现代化文本输入框 - 最简版"""
-
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.font_name = DEFAULT_FONT
@@ -334,7 +332,13 @@ class CustomCheckBox(BoxLayout):
 
 
 # ==================== 工具函数 ====================
-# 注意：get_base_dir 已在前面定义，这里不再重复
+def get_base_dir():
+    """获取程序所在目录"""
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    else:
+        return os.path.dirname(os.path.abspath(__file__))
+
 
 # ==================== 用户数据管理模块 ====================
 class UserManager:
@@ -412,7 +416,6 @@ class DataManager:
         return cls._instance
 
     def load_data(self, callback=None):
-        """异步加载数据（保留兼容）"""
         if self._loaded and self._data is not None:
             if callback:
                 callback(self._data, self._index)
@@ -462,43 +465,6 @@ class DataManager:
         threading.Thread(target=load_thread, daemon=True).start()
         return True
 
-    def load_data_sync(self):
-        """同步加载数据，用于启动时确保数据加载完成"""
-        try:
-            data_file = self._find_data_file()
-
-            print(f"正在查找数据文件...")
-
-            if data_file:
-                with open(data_file, 'r', encoding='utf-8') as f:
-                    self._data = json.load(f)
-                print(f"✓ 从文件加载了 {len(self._data)} 条数据: {data_file}")
-            else:
-                self._error = "数据文件 hazard_data.json 不存在！"
-                self._data = []
-                print("✗ 未找到数据文件 hazard_data.json")
-
-            self._index = {}
-            for hazard in self._data:
-                point_name = hazard.get('riskPointName', '')
-                if point_name not in self._index:
-                    self._index[point_name] = []
-                self._index[point_name].append(hazard)
-
-            print(f"✓ 建立了 {len(self._index)} 个风险点索引")
-            self._loaded = True
-            self._loading = False
-            return True
-
-        except Exception as e:
-            self._error = f"加载数据失败: {e}"
-            self._data = []
-            self._index = {}
-            self._loaded = True
-            self._loading = False
-            print(f"✗ 加载数据失败: {e}")
-            return False
-
     def _find_data_file(self):
         base_dir = get_base_dir()
         paths = [
@@ -509,7 +475,6 @@ class DataManager:
             'hazard_data.json',
         ]
 
-        # 去重
         seen = set()
         unique_paths = []
         for path in paths:
@@ -517,22 +482,9 @@ class DataManager:
                 seen.add(path)
                 unique_paths.append(path)
 
-        print(f"当前程序目录: {base_dir}")
         for path in unique_paths:
-            exists = os.path.exists(path)
-            print(f"  检查: {path} -> {'存在' if exists else '不存在'}")
-            if exists:
+            if os.path.exists(path):
                 return path
-
-        # 尝试列出当前目录所有json文件
-        try:
-            files = os.listdir(base_dir)
-            json_files = [f for f in files if f.endswith('.json')]
-            if json_files:
-                print(f"当前目录下的JSON文件: {json_files}")
-        except Exception as e:
-            print(f"无法列出目录文件: {e}")
-
         return None
 
     def has_error(self):
@@ -709,7 +661,7 @@ class LoginScreen(Screen):
             pos_hint={'center_x': 0.5, 'center_y': 0.5}
         )
 
-        # 标题
+        # 标题 - 移除emoji
         title_label = Label(
             text='安全风险管控',
             font_size='26sp',
@@ -1070,7 +1022,7 @@ class HazardDetailScreen(Screen):
         super().__init__(**kwargs)
         self.main_layout = BoxLayout(orientation='vertical', spacing=dp(3))
 
-        # 顶部导航
+        # 顶部导航 - 移除emoji
         nav_layout = BoxLayout(orientation='horizontal', size_hint_y=0.06, spacing=dp(5), padding=dp(5))
         back_btn = DangerButton(
             text='返回',
@@ -1557,7 +1509,7 @@ class MainScreen(Screen):
             Color(0.95, 0.97, 0.99, 1)
             Rectangle(pos=main_layout.pos, size=main_layout.size)
 
-        # 顶部欢迎区域
+        # 顶部欢迎区域 - 移除emoji
         header = BoxLayout(
             orientation='vertical',
             size_hint=(1, 0.2),
@@ -1593,7 +1545,7 @@ class MainScreen(Screen):
             pos_hint={'center_x': 0.5, 'center_y': 0.5}
         )
 
-        # 功能按钮
+        # 功能按钮 - 移除emoji
         hazard_btn = GradientButton(
             text='危险源录入',
             font_size='18sp',
@@ -1636,23 +1588,16 @@ class MainScreen(Screen):
 
         self.add_widget(main_layout)
 
-        # 数据已在App启动时同步加载，无需再次预加载
-        # 只是显示数据加载状态
-        Clock.schedule_once(lambda dt: self.check_data_status(), 0.5)
-
-    def check_data_status(self):
-        data_manager = DataManager()
-        if data_manager._loaded:
-            count = data_manager.get_total_count()
-            print(f"主界面：数据已加载，共 {count} 条")
-            # 可以更新界面显示数据状态
-        else:
-            print("主界面：数据未加载")
+        Clock.schedule_once(lambda dt: self.preload_data(), 0.5)
 
     def set_client(self, client):
         self.client = client
         if client and client.is_logged_in:
             self.user_label.text = f'欢迎回来，{client.login_name}'
+
+    def preload_data(self):
+        data_manager = DataManager()
+        data_manager.load_data()
 
     def go_to_hazard_list(self, instance):
         detail_screen = self.manager.get_screen('hazard_detail')
@@ -1682,7 +1627,7 @@ class HazardListScreen(Screen):
         super().__init__(**kwargs)
         self.layout = BoxLayout(orientation='vertical', spacing=dp(5))
 
-        # 导航栏
+        # 导航栏 - 移除emoji
         nav_layout = BoxLayout(orientation='horizontal', size_hint_y=0.06, padding=dp(5), spacing=dp(5))
         back_btn = DangerButton(
             text='返回',
@@ -1726,45 +1671,18 @@ class HazardListScreen(Screen):
 
         self.add_widget(self.layout)
 
-        # 直接检查数据是否已加载
         Clock.schedule_once(lambda dt: self.load_risk_points(), 0.1)
 
     def load_risk_points(self):
         data_manager = DataManager()
 
-        # 如果数据已经加载完成，直接渲染
-        if data_manager._loaded and data_manager._data is not None:
-            self._render_buttons()
-            return
-
-        # 如果数据正在加载，显示等待
-        self.loading_label.text = '数据加载中，请稍候...'
-        self.grid.clear_widgets()
-
-        # 尝试重新加载
         def on_data_loaded(data, index):
-            Clock.schedule_once(lambda dt: self._render_buttons(), 0.1)
+            Clock.schedule_once(lambda dt: self._render_buttons(), 0)
 
-        data_manager.load_data(on_data_loaded)
-
-        # 设置超时检查
-        Clock.schedule_once(self._check_load_status, 0.5)
-        Clock.schedule_once(self._check_load_status, 2.0)
-        Clock.schedule_once(self._check_load_status, 5.0)
-
-    def _check_load_status(self, dt):
-        data_manager = DataManager()
-        if data_manager._loaded and data_manager._data is not None:
-            self._render_buttons()
-            return True
-        elif data_manager.has_error():
-            self.loading_label.text = f'加载失败: {data_manager.get_error()}'
-            return True
+        if data_manager._loaded:
+            Clock.schedule_once(lambda dt: self._render_buttons(), 0)
         else:
-            # 还在加载中
-            if self.loading_label.text == '加载风险点列表...':
-                self.loading_label.text = '数据加载中，请稍候...'
-            return False
+            data_manager.load_data(on_data_loaded)
 
     def _render_buttons(self):
         self.grid.clear_widgets()
@@ -1774,7 +1692,7 @@ class HazardListScreen(Screen):
 
         if data_manager.has_error():
             error_label = Label(
-                text=f'数据文件不存在\n请创建 hazard_data.json',
+                text='数据文件不存在\n请创建 hazard_data.json',
                 font_name=DEFAULT_FONT,
                 color=(0.8, 0.2, 0.2, 1),
                 size_hint_y=None,
@@ -1851,7 +1769,7 @@ class PersonalInfoScreen(Screen):
             pos_hint={'center_x': 0.5, 'center_y': 0.5}
         )
 
-        # 头像图标
+        # 头像图标 - 移除emoji
         avatar = Label(
             text='用户',
             font_size='40sp',
@@ -1946,25 +1864,14 @@ class MyApp(App):
         return sm
 
     def on_start(self):
-        # 【关键修改】使用同步加载确保数据在启动时加载完成
-        print("=" * 50)
-        print("应用启动，开始加载数据...")
         data_manager = DataManager()
-        success = data_manager.load_data_sync()
+        data_manager.load_data()
 
-        if success:
-            count = data_manager.get_total_count()
-            print(f"✓ 数据加载成功！共 {count} 条数据")
-        else:
-            print(f"✗ 数据加载失败: {data_manager.get_error()}")
-
-        # 加载用户数据
         user_manager = UserManager()
         user_manager.load_users()
 
         print(f"程序目录: {get_base_dir()}")
         print("应用启动完成")
-        print("=" * 50)
 
 
 if __name__ == '__main__':
